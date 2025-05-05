@@ -53,17 +53,18 @@ class Particle:
         pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), self.radius)
         
 class PhidgetSensor:
-    def __init__ (self, port, sensor_type=VoltageRatioSensorType.SENSOR_TYPE_1108):
+    def __init__(self, ports, sensor_type=VoltageRatioSensorType.SENSOR_TYPE_1108):
+        self.ports = ports
+        self.sensor_type = sensor_type
         self.sensors = []
-        self.port = port
-        self.sensor_type = sensor_type 
-    
+        self.values = {port: 0.0 for port in ports}  # Store live sensor values
+
     def on_sensor_change(self, sensor, sensorValue, sensorUnit):
-        print(f"Sensor on Hub {sensor.getHubPort()} - Value: {sensorValue} {sensorUnit.symbol}")
-        print("----------")
-        
+        port = sensor.getHubPort()
+        self.values[port] = sensorValue  # Update live value for this port
+
     def sensor_starts(self):
-        for port in self.port:
+        for port in self.ports:
             sensor = VoltageRatioInput()
             sensor.setIsHubPortDevice(True)
             sensor.setHubPort(port)
@@ -71,18 +72,33 @@ class PhidgetSensor:
             sensor.openWaitForAttachment(5000)
             sensor.setSensorType(self.sensor_type)
             self.sensors.append(sensor)
-            
-    def close_sensor(self):
+
+    def close_sensors(self):
         for sensor in self.sensors:
             sensor.close()
-            
+
+    '''
     def run(self):
         try:
-            input("Press Enter to stop...\n")
-        except (Exception, KeyboardInterrupt):
+            self.sensor_starts()
+            while True:
+                time.sleep(0.05)
+        except KeyboardInterrupt:
             pass
         finally:
             self.close_sensors()
+    '''
+
+    def get_mapped_position(self):
+        # Use port 1 (or another) to generate a screen position
+        raw_x = self.values.get(1, 0.0)
+        raw_y = self.values.get(2, 0.0)
+        # Clamp and scale from sensor value (approx -1.0 to +1.0) to screen coordinates
+        screen_x = int((raw_x + 1.0) / 2.0 * width)
+        screen_y = int((raw_y + 1.0) / 2.0 * height)
+        return screen_x, screen_y
+
+
 
 #Main loop
 particles = []
@@ -92,10 +108,15 @@ clock = pygame.time.Clock()
 #Increased Particle Generation Rate
 particle_generation_rate = 10
 last_generated_time = pygame.time.get_ticks()
+sensor_handler = PhidgetSensor(ports=[1, 2])
+sensor_handler.sensor_starts()
 
 
-while running:    
-    #screen.fill((0, 0, 0))
+while running:
+    sensorsets = PhidgetSensor(ports=[1, 2, 3, 4])
+    sensorsets.sensor_starts()
+    
+    screen.fill((0, 0, 0))
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -110,17 +131,13 @@ while running:
         last_generated_time = current_time
 
     #Update and move particles
-    mouse_x, mouse_y = pygame.mouse.get_pos()
+    repel_x, repel_y = sensor_handler.get_mapped_position()
     for particle in particles:
-        particle.move_away(mouse_x, mouse_y)
+        particle.move_away(repel_x, repel_y)
+        particle.move_away(repel_x, repel_y)
         particle.draw(screen)
-        
-    sensorsets = PhidgetSensor(port=[1, 2, 3, 4])
-    sensorsets.sensor_starts()
-    sensorsets.run()
 
     pygame.display.flip()
     clock.tick(60)
 
 pygame.quit()
-
